@@ -1,9 +1,11 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useInterview, AVATAR_STATES } from '../../context/InterviewContext';
-import { Mic, MicOff, Video, VideoOff, Play, Volume2, ShieldCheck } from 'lucide-react';
+import { useInterview } from '../../context/InterviewContext';
+import { Mic, MicOff, Video, VideoOff, Play, Volume2, VolumeX } from 'lucide-react';
 import { LiveSubtitleTranscript } from './LiveSubtitleTranscript';
 import { CandidateVideoTile } from './CandidateVideoTile';
+import { InterviewerVoiceSelector } from './InterviewerVoiceSelector';
+import { AudioVisualizer } from './AudioVisualizer';
 
 export const InterviewRoomUI = () => {
   const {
@@ -17,8 +19,9 @@ export const InterviewRoomUI = () => {
     cameraStreamActive,
     setCameraStreamActive,
     targetJob,
-    isAudioUnlocked,
-    unlockAudio
+    isInterviewerSpeaking,
+    isInterviewerMuted,
+    toggleInterviewerMute
   } = useInterview();
 
   if (!selectedInterviewer) return null;
@@ -27,6 +30,23 @@ export const InterviewRoomUI = () => {
 
   return (
     <div className="office-hud">
+      {/* ------------------------------------------------------------------ */}
+      {/* SPEAKING MODE BACKGROUND DIMMING OVERLAY                           */}
+      {/* Dims background by ~20% during speech, preserving interviewer view */}
+      {/* ------------------------------------------------------------------ */}
+      <AnimatePresence>
+        {isInterviewStarted && isInterviewerSpeaking && (
+          <motion.div
+            key="speaking-dim-overlay"
+            className="speaking-mode-dim-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ------------------------------------------------------------------ */}
       {/* TOP BAR: BRAND LOGO & LIVE SESSION PILL                            */}
       {/* ------------------------------------------------------------------ */}
@@ -55,7 +75,7 @@ export const InterviewRoomUI = () => {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* CANDIDATE WEBCAM & COMPUTER VISION TELEMETRY TILE                  */}
+      {/* CANDIDATE WEBCAM & COMPUTER VISION TELEMETRY TILE (TOP-LEFT)       */}
       {/* ------------------------------------------------------------------ */}
       <AnimatePresence>
         {isSceneSettled && (
@@ -64,7 +84,43 @@ export const InterviewRoomUI = () => {
       </AnimatePresence>
 
       {/* ------------------------------------------------------------------ */}
-      {/* PROGRESSIVE SUBTITLE TRANSCRIPT                                    */}
+      {/* CENTRAL REAL-TIME AUDIO WAVEFORM STAGE (VIEWPORT CENTERED)         */}
+      {/* ------------------------------------------------------------------ */}
+      <AnimatePresence>
+        {isInterviewStarted && isInterviewerSpeaking && (
+          <div className="central-speaking-stage-wrapper">
+            <motion.div
+              key="central-speaking-stage"
+              className="central-speaking-stage"
+              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div className="central-waveform-container">
+                <AudioVisualizer
+                  speaking={isInterviewerSpeaking}
+                  isMuted={isInterviewerMuted}
+                  height={140}
+                />
+              </div>
+
+              <div className="speaking-indicator-tag">
+                <span className="speaking-live-dot" />
+                <span className="speaking-indicator-label">
+                  {selectedInterviewer.name} is speaking
+                </span>
+                {isInterviewerMuted && (
+                  <span className="speaking-muted-badge">Muted</span>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* PROGRESSIVE SUBTITLE TRANSCRIPT & CANDIDATE ACTION CARD            */}
       {/* ------------------------------------------------------------------ */}
       <AnimatePresence>
         {isInterviewStarted && (
@@ -73,7 +129,7 @@ export const InterviewRoomUI = () => {
       </AnimatePresence>
 
       {/* ------------------------------------------------------------------ */}
-      {/* BOTTOM ROW: INTERVIEWER STATUS (CENTER) & READY ACTION (RIGHT)     */}
+      {/* BOTTOM ROW: INTERVIEWER STATUS & READY ACTION                      */}
       {/* ------------------------------------------------------------------ */}
       <div className="office-hud-bottom">
         {/* Left/Center: Interviewer Persona Pill */}
@@ -96,6 +152,30 @@ export const InterviewRoomUI = () => {
                 : selectedInterviewer.greeting}
             </span>
           </div>
+
+          {/* Subtle Voice Selection Control */}
+          <InterviewerVoiceSelector />
+
+          {/* Subtle Audio Mute/Unmute Control */}
+          <button
+            type="button"
+            className={`interviewer-mute-toggle-btn ${isInterviewerMuted ? 'muted' : ''}`}
+            onClick={toggleInterviewerMute}
+            title={isInterviewerMuted ? "Unmute Interviewer Voice" : "Mute Interviewer Voice"}
+            aria-label={isInterviewerMuted ? "Unmute Interviewer Voice" : "Mute Interviewer Voice"}
+          >
+            {isInterviewerMuted ? (
+              <>
+                <VolumeX size={13} color="var(--status-amber)" />
+                <span className="mute-btn-text">Voice Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 size={13} color="var(--accent-warm-gold)" />
+                <span className="mute-btn-text">Voice On</span>
+              </>
+            )}
+          </button>
         </motion.div>
 
         {/* Right: Start Interview / Ready Card */}

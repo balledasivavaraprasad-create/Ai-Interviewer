@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useInterview, AVATAR_STATES } from '../../context/InterviewContext';
-import { RotateCcw, SkipForward, Square, Sparkles, Send } from 'lucide-react';
+import { RotateCcw, Square, Sparkles, Send, CheckCircle2 } from 'lucide-react';
 
 export const LiveSubtitleTranscript = () => {
   const {
@@ -10,7 +10,6 @@ export const LiveSubtitleTranscript = () => {
     spokenText,
     currentWordIndex,
     isInterviewerSpeaking,
-    speechEnergy,
     currentQuestion,
     currentQuestionIndex,
     isGeneratingQuestion,
@@ -35,71 +34,41 @@ export const LiveSubtitleTranscript = () => {
   };
 
   return (
-    <motion.div
-      className="dialogue-prompt-box"
-      initial={{ opacity: 0, y: -20, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -15, scale: 0.98 }}
-      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      role="region"
-      aria-label="Interview Question Subtitle"
-    >
-      {/* Speaker Header, Competency Badge & Micro-Waveform */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <div className={`dialogue-prompt-wrapper ${isInterviewerSpeaking ? 'speaking-mode' : 'candidate-mode'}`}>
+      <motion.div
+        className={`dialogue-prompt-box ${isInterviewerSpeaking ? 'speaking-mode' : 'candidate-mode'}`}
+        initial={{ opacity: 0, y: -12, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -12, scale: 0.98 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        role="region"
+        aria-label="Interview Question Subtitle"
+      >
+      {/* Header: Speaker identity & status */}
+      <div className="dialogue-header-row">
+        <div className="dialogue-meta-left">
           <span className="dialogue-speaker">
             {selectedInterviewer.name}
           </span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>·</span>
-          <span style={{
-            fontSize: 11,
-            color: isInterviewerSpeaking ? 'var(--accent-warm-gold)' : 'var(--status-emerald)',
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em'
-          }}>
+          <span className="dialogue-meta-dot">·</span>
+          <span className={`dialogue-state-badge ${isInterviewerSpeaking ? 'speaking' : 'listening'}`}>
             {isGeneratingQuestion 
-              ? 'Gemini Formulating Question...' 
+              ? 'Formulating Next Question...' 
               : isInterviewerSpeaking 
                 ? 'Speaking' 
                 : 'Listening'}
           </span>
 
           {currentQuestion?.competency && (
-            <span style={{
-              fontSize: 10.5,
-              padding: '2px 8px',
-              borderRadius: 4,
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: 'var(--text-warm)'
-            }}>
+            <span className="competency-chip">
               {currentQuestion.competency}
             </span>
           )}
         </div>
 
-        {/* Subtle Micro Audio Waveform (Reacts to live speech energy) */}
-        {isInterviewerSpeaking && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 16 }}>
-            {[0.6, 1.0, 0.8, 1.2, 0.7].map((scale, i) => (
-              <span
-                key={i}
-                style={{
-                  width: 2.5,
-                  height: Math.max(3, speechEnergy * 14 * scale),
-                  backgroundColor: 'var(--text-warm)',
-                  borderRadius: 1,
-                  transition: 'height 0.08s ease-out'
-                }}
-              />
-            ))}
-          </div>
-        )}
-
         {isListening && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--status-emerald)' }}>
-            <span className="live-dot" style={{ width: 6, height: 6 }} />
+          <div className="candidate-ready-tag">
+            <span className="live-dot" />
             <span>Ready for your answer</span>
           </div>
         )}
@@ -143,77 +112,82 @@ export const LiveSubtitleTranscript = () => {
         })}
       </p>
 
-      {/* Dynamic Candidate Response Box (Foundation for Gemini follow-ups) */}
-      {isListening && (
-        <form onSubmit={handleSendResponse} style={{ marginTop: 16, display: 'flex', gap: 8 }}>
-          <input
-            type="text"
-            className="form-input"
-            style={{ padding: '8px 12px', fontSize: 13, flex: 1 }}
-            placeholder="Type your response or summarize your technical answer..."
-            value={candidateResponse}
-            onChange={(e) => setCandidateResponse(e.target.value)}
-          />
-          <button
-            type="submit"
-            className="btn-primary"
-            style={{ width: 'auto', padding: '8px 16px', fontSize: 12.5 }}
-            disabled={!candidateResponse.trim() || isGeneratingQuestion}
+      {/* Candidate Response Controls - Appears when interviewer finishes speaking */}
+      <AnimatePresence>
+        {!isInterviewerSpeaking && (
+          <motion.div
+            key="candidate-interaction-controls"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
           >
-            <span>Answer</span>
-            <Send size={13} />
-          </button>
-        </form>
-      )}
+            <form onSubmit={handleSendResponse} className="candidate-answer-form">
+              <input
+                type="text"
+                className="form-input candidate-answer-input"
+                placeholder="Type your response or summarize your technical answer..."
+                value={candidateResponse}
+                onChange={(e) => setCandidateResponse(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="btn-primary answer-submit-btn"
+                disabled={!candidateResponse.trim() || isGeneratingQuestion}
+              >
+                <span>Answer</span>
+                <Send size={13} />
+              </button>
+            </form>
 
-      {/* Minimalist Question Controls (Replay, Stop, Next Question) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 14,
-        paddingTop: 12,
-        borderTop: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isInterviewerSpeaking ? (
-            <button
-              type="button"
-              className="quick-role-chip"
-              onClick={stopSpeaking}
-              title="Pause interviewer speech"
-            >
-              <Square size={11} style={{ marginRight: 5, fill: 'currentColor' }} />
-              Pause Speaking
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="quick-role-chip"
-              onClick={replayQuestion}
-              title="Repeat current question"
-            >
-              <RotateCcw size={11} style={{ marginRight: 5 }} />
-              Repeat Question
-            </button>
-          )}
+            {/* Question Actions (Repeat Question, Next Question, Counter) */}
+            <div className="dialogue-footer-row">
+              <div className="dialogue-actions-group">
+                <button
+                  type="button"
+                  className="quick-role-chip"
+                  onClick={replayQuestion}
+                  title="Repeat current question"
+                >
+                  <RotateCcw size={11} style={{ marginRight: 5 }} />
+                  Repeat Question
+                </button>
 
+                <button
+                  type="button"
+                  className="quick-role-chip"
+                  onClick={() => askNextQuestion()}
+                  disabled={isGeneratingQuestion}
+                  title="Generate next question via Gemini"
+                >
+                  <Sparkles size={11} style={{ marginRight: 5 }} color="var(--accent-warm-gold)" />
+                  Next Question
+                </button>
+              </div>
+
+              <div className="question-counter-label">
+                Question {currentQuestionIndex + 1}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Minimal Pause Speech Chip during Speaking Mode */}
+      {isInterviewerSpeaking && (
+        <div className="speaking-mode-micro-footer">
           <button
             type="button"
-            className="quick-role-chip"
-            onClick={() => askNextQuestion()}
-            disabled={isGeneratingQuestion}
-            title="Generate next question via Gemini"
+            className="speaking-pause-btn"
+            onClick={stopSpeaking}
+            title="Pause interviewer speech"
           >
-            <Sparkles size={11} style={{ marginRight: 5 }} color="var(--accent-warm-gold)" />
-            Next Question
+            <Square size={10} style={{ marginRight: 5, fill: 'currentColor' }} />
+            <span>Pause Speaking</span>
           </button>
         </div>
-
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          Question {currentQuestionIndex + 1}
-        </div>
-      </div>
-    </motion.div>
+      )}
+      </motion.div>
+    </div>
   );
 };

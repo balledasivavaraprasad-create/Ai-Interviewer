@@ -7,6 +7,7 @@ import { InterviewerStateController } from '../controllers/avatar/InterviewerSta
 import { STEPS, AVATAR_STATES, INTERVIEW_STATES } from '../config/constants';
 import { InterviewTelemetry } from '../services/telemetry/InterviewTelemetry';
 import { CandidateTracker } from '../services/vision/CandidateTracker';
+import { InterviewerAudioController } from '../services/audio/InterviewerAudioController';
 
 export { AVATAR_STATES, INTERVIEW_STATES };
 
@@ -52,8 +53,13 @@ export const InterviewProvider = ({ children }) => {
   const [spokenText, setSpokenText] = useState('');
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
+  const [currentAudioTime, setCurrentAudioTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   const [speechEnergy, setSpeechEnergy] = useState(0);
   const [isGeneratingQuestion, setIsGeneratingQuestion] = useState(false);
+
+  // Authoritative Interviewer Voice Configuration
+  const [interviewerVoice, setInterviewerVoiceState] = useState('gemini_aoede');
 
   // Audio & Hardware Permissions
   const [audioStreamActive, setAudioStreamActive] = useState(true);
@@ -71,10 +77,40 @@ export const InterviewProvider = ({ children }) => {
     });
   }
 
+  // Set Interviewer Voice (applies to subsequent speech)
+  const setInterviewerVoice = useCallback((voiceId) => {
+    setInterviewerVoiceState(voiceId);
+    SpeechEngine.setInterviewerVoice(voiceId);
+    InterviewerAudioController.setInterviewerVoice(voiceId);
+  }, []);
+
   // Session-lock gender and voice
   const setInterviewerGender = useCallback((gender) => {
     setInterviewerGenderState(gender);
     SpeechEngine.lockSessionVoice(gender);
+    const defaultVoice = gender === 'male' ? 'gemini_fenrir' : 'gemini_aoede';
+    setInterviewerVoiceState(defaultVoice);
+    SpeechEngine.setInterviewerVoice(defaultVoice);
+  }, []);
+
+  // Audio Mute State
+  const [isInterviewerMuted, setIsInterviewerMuted] = useState(InterviewerAudioController.isMuted);
+
+  const toggleInterviewerMute = useCallback(() => {
+    const nextMuted = InterviewerAudioController.toggleMute();
+    setIsInterviewerMuted(nextMuted);
+    return nextMuted;
+  }, []);
+
+  // Subscribe to central InterviewerAudioController playback events
+  useEffect(() => {
+    const unsub = InterviewerAudioController.subscribe((audioSnap) => {
+      setIsInterviewerSpeaking(audioSnap.isSpeaking);
+      setIsInterviewerMuted(audioSnap.isMuted);
+      setCurrentAudioTime(audioSnap.currentAudioTime);
+      setAudioDuration(audioSnap.audioDuration);
+    });
+    return () => unsub();
   }, []);
 
   // Subscribe to Telemetry updates
@@ -416,6 +452,14 @@ export const InterviewProvider = ({ children }) => {
         spokenText,
         currentWordIndex,
         isInterviewerSpeaking,
+        interviewerSpeaking: isInterviewerSpeaking,
+        currentAudioTime,
+        audioDuration,
+        interviewerVoice,
+        setInterviewerVoice,
+        interviewerAudioController: InterviewerAudioController,
+        isInterviewerMuted,
+        toggleInterviewerMute,
         speechEnergy,
 
         // Hardware & Audio Unlocking

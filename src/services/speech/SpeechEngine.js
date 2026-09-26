@@ -1,7 +1,8 @@
 import { VisemeTimeline } from './VisemeTimeline';
 import { AudioAnalyzer } from './AudioAnalyzer';
-import { VOICE_PROFILES } from '../../config/interviewers';
+import { VOICE_PROFILES, getVoiceById, AVAILABLE_VOICES } from '../../config/interviewers';
 import { GlobalAudioVisemeEngine } from './AudioVisemeSyncEngine';
+import { InterviewerAudioController } from '../audio/InterviewerAudioController';
 
 /**
  * Unified Speech Engine and Authoritative Timeline Coordinator.
@@ -91,8 +92,34 @@ class SpeechEngineService {
         const lower = v.name.toLowerCase();
         return !femaleNames.some(f => lower.includes(f)) && (lower.includes('male') || lower.includes('man') || !lower.includes('female'));
       });
-      this.lockedVoice = candidate || enVoices[0] || voices[0];
     }
+  }
+
+  /**
+   * Sets the authoritative interviewer voice (affects future spoken responses).
+   */
+  setInterviewerVoice(voiceId) {
+    const voiceConfig = getVoiceById(voiceId);
+    if (!voiceConfig) return;
+
+    this.activeVoiceConfig = voiceConfig;
+    this.currentGender = voiceConfig.gender;
+
+    const voices = this.availableVoices.length > 0 
+      ? this.availableVoices 
+      : (typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis.getVoices() : []);
+
+    if (voiceConfig.webSpeechFallback && voices.length > 0) {
+      for (const name of voiceConfig.webSpeechFallback) {
+        const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+        if (match) {
+          this.lockedVoice = match;
+          break;
+        }
+      }
+    }
+
+    InterviewerAudioController.setInterviewerVoice(voiceId);
   }
 
   subscribe(callback) {
@@ -184,16 +211,19 @@ class SpeechEngineService {
     utterance.onstart = () => {
       this.isSpeaking = true;
       this.startTime = performance.now();
+      InterviewerAudioController.startAcousticSpeechSession(estimatedDuration);
       if (onStart) onStart();
       this.startTimelineLoop(onEnd);
     };
 
     utterance.onend = () => {
+      InterviewerAudioController.stopAcousticSpeechSession();
       this.handleSpeechComplete(onEnd);
     };
 
     utterance.onerror = (e) => {
       console.warn('SpeechSynthesis error:', e);
+      InterviewerAudioController.stopAcousticSpeechSession();
       this.handleSpeechComplete(onEnd);
       if (onError) onError(e);
     };
@@ -325,6 +355,7 @@ class SpeechEngineService {
     }
 
     GlobalAudioVisemeEngine.reset();
+    InterviewerAudioController.stop();
 
     AudioAnalyzer.setSimulatedEnergy(0);
 

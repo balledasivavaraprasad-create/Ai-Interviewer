@@ -792,22 +792,168 @@ html, body {
   background: rgba(255, 255, 255, 0.07);
 }
 
-/* Speech Dialogue Overlay (For Question display in Room) */
-.dialogue-prompt-box {
+/* -------------------------------------------------------------------------- */
+/* SPEAKING MODE INTERFACE & CENTRAL AUDIO WAVEFORM                           */
+/* -------------------------------------------------------------------------- */
+
+/* Dimming Background Overlay: Dims office by ~20%, keeping interviewer visible */
+.speaking-mode-dim-overlay {
   position: absolute;
-  top: 100px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(13, 16, 23, 0.82);
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 20px 28px;
-  max-width: 620px;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, rgba(6, 9, 14, 0.22) 0%, rgba(3, 4, 7, 0.38) 100%);
+  backdrop-filter: brightness(0.80) contrast(1.03);
+  -webkit-backdrop-filter: brightness(0.80) contrast(1.03);
+}
+
+/* Central Speaking Stage Wrapper (Horizontally & Vertically Centered in Viewport) */
+.central-speaking-stage-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.central-speaking-stage {
+  width: clamp(340px, 58vw, 760px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.central-waveform-container {
+  width: 100%;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Subtle Speaking Status Indicator Tag */
+.speaking-indicator-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(14, 18, 25, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.speaking-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-warm-gold);
+  box-shadow: 0 0 8px var(--accent-warm-gold);
+  animation: livePulse 1.8s infinite ease-in-out;
+}
+
+.speaking-indicator-label {
+  font-weight: 500;
+  color: var(--text-warm);
+}
+
+.speaking-muted-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #FBBF24;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* SPEECH DIALOGUE & SUBTITLE BOX                                             */
+/* -------------------------------------------------------------------------- */
+
+.dialogue-prompt-wrapper {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Speaking Mode: Centered directly below the central waveform */
+.dialogue-prompt-wrapper.speaking-mode {
+  left: 0;
+  right: 0;
+  top: calc(50% + 94px);
+  display: flex;
+  justify-content: center;
+}
+
+/* Candidate Mode: Positioned cleanly in upper-right away from top-left webcam */
+.dialogue-prompt-wrapper.candidate-mode {
+  top: 86px;
+  right: 36px;
+  left: auto;
+  display: flex;
+  justify-content: flex-end;
+  max-width: 520px;
+  width: calc(100% - 290px);
+}
+
+.dialogue-prompt-box {
   width: 90%;
-  text-align: center;
-  box-shadow: var(--shadow-elevated);
   pointer-events: auto;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Speaking Mode: Positioned cleanly below central waveform with secondary prominence */
+.dialogue-prompt-box.speaking-mode {
+  max-width: 660px;
+  background: rgba(10, 13, 19, 0.68);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 16px 24px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+  transition: background 0.4s ease, border-color 0.4s ease, padding 0.4s ease;
+}
+
+/* Candidate Mode: Upper/center comfortable reading position with full candidate action UI */
+.dialogue-prompt-box.candidate-mode {
+  max-width: 620px;
+  background: rgba(13, 16, 23, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-light);
+  padding: 20px 28px;
+  box-shadow: var(--shadow-elevated);
+  transition: background 0.4s ease, border-color 0.4s ease, padding 0.4s ease;
+}
+
+.dialogue-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.dialogue-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .dialogue-speaker {
@@ -815,15 +961,149 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-warm);
-  margin-bottom: 6px;
   font-weight: 600;
 }
 
+.dialogue-meta-dot {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dialogue-state-badge {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dialogue-state-badge.speaking {
+  color: var(--accent-warm-gold);
+}
+
+.dialogue-state-badge.listening {
+  color: var(--status-emerald);
+}
+
+.competency-chip {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-warm);
+}
+
+.candidate-ready-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--status-emerald);
+}
+
 .dialogue-text {
-  font-size: 16px;
+  font-size: 15.5px;
   line-height: 1.55;
   color: var(--text-pure);
   font-weight: 400;
+  text-align: center;
+}
+
+/* Candidate Response Form & Action Rows */
+.candidate-answer-form {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+}
+
+.candidate-answer-input {
+  padding: 8px 12px;
+  font-size: 13px;
+  flex: 1;
+}
+
+.answer-submit-btn {
+  width: auto;
+  padding: 8px 16px;
+  font-size: 12.5px;
+}
+
+.dialogue-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dialogue-actions-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.question-counter-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Minimalist Pause Speaking button during speech */
+.speaking-mode-micro-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.speaking-pause-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.speaking-pause-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-pure);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Interviewer Audio Mute Toggle Button */
+.interviewer-mute-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.interviewer-mute-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-pure);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.interviewer-mute-toggle-btn.muted {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #FBBF24;
+}
+
+.mute-btn-text {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
 }
 
 /* Loading state */
@@ -894,20 +1174,20 @@ html, body {
   }
 }
 
-/* Candidate Video Tile & CV Telemetry HUD */
+/* Candidate Video Tile (Top-Left Docked Floating Panel) */
 .candidate-tile-wrapper {
   position: absolute;
-  top: 96px;
-  right: 44px;
-  width: 228px;
+  top: 92px;
+  left: 44px;
+  width: 218px;
   border-radius: var(--radius-md);
-  background: rgba(15, 18, 26, 0.85);
+  background: rgba(14, 17, 24, 0.88);
   backdrop-filter: blur(20px);
   border: 1px solid var(--border-subtle);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   pointer-events: auto;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.3s ease;
   z-index: 40;
 }
 
@@ -1079,4 +1359,200 @@ html, body {
 .hud-val.val-dim {
   color: #64748B;
 }
+
+/* Interviewer Audio Waveform Visualizer */
+.audio-visualizer-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 12px 0 6px 0;
+  width: 100%;
+}
+
+.interviewer-audio-visualizer-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 18, 26, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-pill);
+  padding: 4px 16px;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Subtle Interviewer Voice Selector */
+.voice-selector-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.voice-selector-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
+  padding: 5px 11px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.voice-selector-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-pure);
+}
+
+.voice-icon {
+  color: var(--accent-warm-gold);
+}
+
+.voice-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.voice-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.voice-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 250px;
+  background: rgba(16, 20, 29, 0.96);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  padding: 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.voice-menu-header {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 6px 10px 4px 10px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 3px;
+}
+
+.voice-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.voice-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.voice-menu-item.selected {
+  background: rgba(226, 196, 153, 0.12);
+}
+
+.voice-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-pure);
+}
+
+.voice-item-style {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.voice-check-icon {
+  color: var(--accent-warm-gold);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* Responsive Overrides */
+@media (max-width: 1024px) {
+  .candidate-tile-wrapper {
+    top: 78px;
+    left: 24px;
+    width: 180px;
+  }
+
+  .central-speaking-stage {
+    width: clamp(320px, 70vw, 680px);
+  }
+
+  .dialogue-prompt-wrapper.speaking-mode {
+    top: calc(50% + 82px);
+  }
+
+  .dialogue-prompt-box.speaking-mode {
+    max-width: 580px;
+  }
+}
+
+@media (max-width: 768px) {
+  .candidate-tile-wrapper {
+    top: 68px;
+    left: 16px;
+    width: 145px;
+  }
+
+  .central-speaking-stage {
+    width: 84vw;
+  }
+
+  .central-waveform-container {
+    height: 110px;
+  }
+
+  .dialogue-prompt-wrapper.speaking-mode {
+    top: calc(50% + 72px);
+  }
+
+  .dialogue-prompt-wrapper.candidate-mode {
+    left: 0;
+    right: 0;
+    top: 236px;
+    width: 100%;
+    max-width: none;
+    display: flex;
+    justify-content: center;
+  }
+
+  .dialogue-prompt-box.speaking-mode {
+    width: 92vw;
+    padding: 12px 18px;
+  }
+
+  .dialogue-prompt-box.candidate-mode {
+    width: 92vw;
+    padding: 16px 20px;
+  }
+}
+
+
 
