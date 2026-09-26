@@ -15,6 +15,14 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/gemini/generate-question', createGeminiMiddleware(env));
         }
       }
-    ]
+    ],
+    server: {
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true
+        }
+      }
+    }
   };
 });

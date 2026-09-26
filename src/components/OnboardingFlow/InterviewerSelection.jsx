@@ -9,10 +9,20 @@ export const InterviewerSelection = () => {
     interviewerGender, 
     setInterviewerGender, 
     startOfficeEntrance, 
-    backToProfileSetup 
+    goToWaitingRoom,
+    goToOrganizationSelection,
+    selectedSchedule 
   } = useInterview();
 
   const isSelected = !!interviewerGender;
+
+  const handleProceed = () => {
+    if (selectedSchedule) {
+      goToWaitingRoom();
+    } else {
+      startOfficeEntrance();
+    }
+  };
 
   return (
     <motion.div
@@ -106,18 +116,18 @@ export const InterviewerSelection = () => {
           type="button"
           className="btn-primary"
           disabled={!isSelected}
-          onClick={startOfficeEntrance}
+          onClick={handleProceed}
         >
-          <span>Meet your interviewer</span>
+          <span>{selectedSchedule ? 'Proceed to Waiting Room' : 'Meet your interviewer'}</span>
           <ArrowRight size={16} />
         </button>
         <button
           type="button"
           className="btn-secondary-link"
-          onClick={backToProfileSetup}
+          onClick={goToOrganizationSelection}
         >
           <ArrowLeft size={13} style={{ display: 'inline', marginRight: 6 }} />
-          Back to profile details
+          Back to organization selection
         </button>
       </div>
     </motion.div>

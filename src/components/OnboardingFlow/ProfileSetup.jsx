@@ -6,7 +6,7 @@ import { TargetJobInput } from './TargetJobInput';
 import { ArrowRight } from 'lucide-react';
 
 export const ProfileSetup = () => {
-  const { goToInterviewerSelection } = useInterview();
+  const { goToOrganizationSelection } = useInterview();
 
   return (
     <motion.div
@@ -30,7 +30,7 @@ export const ProfileSetup = () => {
         <button
           type="button"
           className="btn-primary"
-          onClick={goToInterviewerSelection}
+          onClick={goToOrganizationSelection}
         >
           <span>Continue</span>
           <ArrowRight size={16} />
@@ -38,7 +38,7 @@ export const ProfileSetup = () => {
         <button
           type="button"
           className="btn-secondary-link"
-          onClick={goToInterviewerSelection}
+          onClick={goToOrganizationSelection}
         >
           Skip for now
         </button>

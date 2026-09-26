@@ -8,6 +8,7 @@ import { STEPS, AVATAR_STATES, INTERVIEW_STATES } from '../config/constants';
 import { InterviewTelemetry } from '../services/telemetry/InterviewTelemetry';
 import { CandidateTracker } from '../services/vision/CandidateTracker';
 import { InterviewerAudioController } from '../services/audio/InterviewerAudioController';
+import { interviewApi } from '../services/api';
 
 export { AVATAR_STATES, INTERVIEW_STATES };
 
@@ -20,6 +21,12 @@ export const InterviewProvider = ({ children }) => {
 
   // Step 2 State: Selected Interviewer Gender (Session Locked)
   const [interviewerGender, setInterviewerGenderState] = useState(null);
+
+  // Scheduling & Organization State
+  const [selectedSchedule, setSelectedSchedule] = useState(null);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [activeSessionData, setActiveSessionData] = useState(null);
 
   // Overall Flow Step
   const [currentStep, setCurrentStep] = useState(STEPS.PROFILE_SETUP);
@@ -223,6 +230,22 @@ export const InterviewProvider = ({ children }) => {
     }, 4800);
   }, [interviewerGender]);
 
+  // Complete Interview Session & Report Transition
+  const completeInterviewSession = useCallback(async () => {
+    if (stateControllerRef.current) {
+      stateControllerRef.current.stop(AVATAR_STATES.IDLE);
+    }
+    setIsInterviewerSpeaking(false);
+    if (activeSessionId) {
+      try {
+        await interviewApi.completeSession(activeSessionId);
+      } catch (err) {
+        console.error('Complete session notice:', err);
+      }
+    }
+    setCurrentStep(STEPS.REPORT_VIEW);
+  }, [activeSessionId]);
+
   // Audio unlock helper
   const unlockAudio = useCallback(async () => {
     await AudioAnalyzer.unlock();
@@ -264,7 +287,7 @@ export const InterviewProvider = ({ children }) => {
     );
   }, [interviewerGender, transitionInterviewState]);
 
-  // Core Gemini Question Lifecycle
+  // Core Backend + Gemini Question Lifecycle
   const startInterview = useCallback(async () => {
     await unlockAudio();
     setIsInterviewStarted(true);
@@ -273,32 +296,49 @@ export const InterviewProvider = ({ children }) => {
     transitionInterviewState(INTERVIEW_STATES.CAMERA_INITIALIZING, 'Requesting webcam and initializing FaceLandmarker');
     InterviewTelemetry.recordEvent('interviewStartedAt', { targetJob: targetJob || 'Software Engineer' });
 
-    // 2. Camera & CV warm-up
-    setTimeout(() => {
-      transitionInterviewState(INTERVIEW_STATES.READY, 'Camera and CV tracking confirmed');
-      setIsGeneratingQuestion(true);
-
-      GeminiService.generateNextQuestion({
+    try {
+      const payload = {
+        organizationId: selectedSchedule?.organizationId || null,
+        jobRoleId: selectedSchedule?.jobRoleId || null,
+        scheduleId: selectedSchedule?.id || null,
+        isPractice: isPracticeMode || !selectedSchedule,
+        interviewerGender: interviewerGender || 'female',
         targetJob: targetJob || 'Software Engineer',
-        resumeText: resume ? `Candidate file: ${resume.name}` : '',
-        interviewHistory: []
-      }).then(q => {
+        resumeText: resume ? `Candidate file: ${resume.name}` : ''
+      };
+
+      const res = await interviewApi.startSession(payload);
+      if (res.session) {
+        setActiveSessionId(res.session.id);
+        setActiveSessionData(res.session);
+      }
+
+      setTimeout(() => {
+        transitionInterviewState(INTERVIEW_STATES.READY, 'Camera and CV tracking confirmed');
+        const qText = res?.session?.currentQuestion || "Welcome. Can you walk me through the most technically challenging project you have designed or engineered recently?";
+        const comp = res?.session?.currentCompetency || "System Design";
+
         setCurrentQuestionIndex(0);
-        executeSpeech(q);
-      }).catch(e => {
-        console.error('Failed to start interview question:', e);
+        executeSpeech({
+          id: 'q_1',
+          text: qText,
+          competency: comp,
+          difficulty: 3
+        });
+      }, 1200);
+    } catch (e) {
+      console.warn('Backend interview session note, falling back to local Gemini engine:', e);
+      setTimeout(() => {
+        transitionInterviewState(INTERVIEW_STATES.READY, 'Camera and CV tracking confirmed');
         executeSpeech({
           id: 'q_init',
           text: "Welcome. Can you walk me through the most technically challenging project you have designed or engineered recently?",
           competency: "System Design & Problem Solving",
           difficulty: 3
         });
-      }).finally(() => {
-        setIsGeneratingQuestion(false);
-      });
-    }, 1400);
-
-  }, [targetJob, resume, unlockAudio, executeSpeech, transitionInterviewState]);
+      }, 1200);
+    }
+  }, [targetJob, resume, selectedSchedule, isPracticeMode, interviewerGender, unlockAudio, executeSpeech, transitionInterviewState]);
 
   const askNextQuestion = useCallback(async (candidateAnswer) => {
     transitionInterviewState(INTERVIEW_STATES.ANALYZING, 'Evaluating candidate response');
@@ -316,6 +356,32 @@ export const InterviewProvider = ({ children }) => {
     }
 
     try {
+      if (activeSessionId) {
+        const answerRes = await interviewApi.submitAnswer(activeSessionId, {
+          answerText: candidateAnswer || 'Candidate articulated response.',
+          currentQuestionText: currentQuestion?.text || '',
+          currentCompetency: currentQuestion?.competency || 'System Design'
+        });
+
+        if (answerRes.completed) {
+          completeInterviewSession();
+          return;
+        }
+
+        if (answerRes.nextQuestion) {
+          transitionInterviewState(INTERVIEW_STATES.NEXT_QUESTION, 'Formulating next technical question');
+          setCurrentQuestionIndex(prev => prev + 1);
+          executeSpeech({
+            id: `q_${Date.now()}`,
+            text: answerRes.nextQuestion,
+            competency: answerRes.competency || 'Technical Competency',
+            difficulty: answerRes.difficulty || 4
+          });
+          return;
+        }
+      }
+
+      // Standalone Gemini fallback
       transitionInterviewState(INTERVIEW_STATES.NEXT_QUESTION, 'Formulating next technical question');
       const nextQ = await GeminiService.generateNextQuestion({
         targetJob: targetJob || 'Software Engineer',
@@ -338,7 +404,7 @@ export const InterviewProvider = ({ children }) => {
     } finally {
       setIsGeneratingQuestion(false);
     }
-  }, [currentQuestion, targetJob, resume, interviewHistory, executeSpeech, transitionInterviewState]);
+  }, [activeSessionId, currentQuestion, targetJob, resume, interviewHistory, completeInterviewSession, executeSpeech, transitionInterviewState]);
 
   askNextQuestionRef.current = askNextQuestion;
 
@@ -420,9 +486,19 @@ export const InterviewProvider = ({ children }) => {
         // Step navigation
         currentStep,
         transitionSubphase,
+        selectedSchedule,
+        setSelectedSchedule,
+        isPracticeMode,
+        setIsPracticeMode,
+        activeSessionId,
+        activeSessionData,
+        goToOrganizationSelection: () => setCurrentStep(STEPS.ORGANIZATION_SELECTION),
         goToInterviewerSelection,
+        goToWaitingRoom: () => setCurrentStep(STEPS.WAITING_ROOM),
+        goToReportView: () => setCurrentStep(STEPS.REPORT_VIEW),
         backToProfileSetup,
         startOfficeEntrance,
+        completeInterviewSession,
 
         // State Machine & Speech Lifecycle
         interviewState,

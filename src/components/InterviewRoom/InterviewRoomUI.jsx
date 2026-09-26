@@ -21,7 +21,8 @@ export const InterviewRoomUI = () => {
     targetJob,
     isInterviewerSpeaking,
     isInterviewerMuted,
-    toggleInterviewerMute
+    toggleInterviewerMute,
+    completeInterviewSession
   } = useInterview();
 
   if (!selectedInterviewer) return null;
@@ -48,7 +49,7 @@ export const InterviewRoomUI = () => {
       </AnimatePresence>
 
       {/* ------------------------------------------------------------------ */}
-      {/* TOP BAR: BRAND LOGO & LIVE SESSION PILL                            */}
+      {/* TOP BAR: BRAND LOGO, LIVE SESSION PILL & CONCLUDE ACTION           */}
       {/* ------------------------------------------------------------------ */}
       <div className="office-hud-top">
         <div className="brand-header" style={{ position: 'static' }}>
@@ -63,15 +64,28 @@ export const InterviewRoomUI = () => {
           </div>
         </div>
 
-        <motion.div
-          className="live-session-pill"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: isSceneSettled ? 1 : 0, y: isSceneSettled ? 0 : -10 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-        >
-          <div className="live-dot" />
-          <span>Private Session · Live Voice & Lip-Sync Active</span>
-        </motion.div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <motion.div
+            className="live-session-pill"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: isSceneSettled ? 1 : 0, y: isSceneSettled ? 0 : -10 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+            <div className="live-dot" />
+            <span>Private Session · Live Voice & Lip-Sync Active</span>
+          </motion.div>
+
+          {isInterviewStarted && (
+            <button
+              type="button"
+              className="btn-conclude-interview"
+              onClick={completeInterviewSession}
+              title="Conclude Interview and Synthesize Evaluation Report"
+            >
+              Conclude &amp; View Report
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}
