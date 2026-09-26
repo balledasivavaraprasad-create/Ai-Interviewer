@@ -6,6 +6,7 @@ import { InterviewerLipSyncController } from '../../controllers/avatar/Interview
 import { InterviewerFacialController } from '../../controllers/avatar/InterviewerFacialController';
 import { InterviewerAnimationController } from '../../controllers/avatar/InterviewerAnimationController';
 import { AudioAnalyzer } from '../../services/speech/AudioAnalyzer';
+import { getFaceRig } from '../../services/vision/FaceRigService';
 
 // High-precision vertex shader with depth displacement, breathing, and posture motion
 const avatarVertexShader = `
@@ -87,6 +88,11 @@ const avatarFragmentShader = `
   uniform float uLipClose;
   uniform float uMouthCornerPull;
   uniform float uChinRaise;
+  uniform vec2 uMouthCenter;
+  uniform float uMouthWidth;
+  uniform vec2 uEyeCenter;
+  uniform float uEyebrowY;
+  uniform float uChinY;
   uniform vec3 uKeyLightColor;
   uniform vec3 uFillLightColor;
   uniform float uFadeIn;
@@ -101,59 +107,56 @@ const avatarFragmentShader = `
     vec2 uv = vUv;
 
     // -------------------------------------------------------------------------
-    // 1. Viseme Mouth Morphing (Jaw, Upper/Lower Lips, Width, Pucker)
+    // 1. Viseme Mouth Morphing using CV Landmarked Coordinates
     // -------------------------------------------------------------------------
-    vec2 mouthCenter = vec2(0.502, 0.442);
+    vec2 mouthCenter = uMouthCenter;
     float distToMouthX = abs(uv.x - mouthCenter.x);
     float distToMouthY = abs(uv.y - mouthCenter.y);
 
-    // Bounding region around lips and lower jaw
-    if (distToMouthX < 0.14 && uv.y > 0.35 && uv.y < 0.52) {
-      float mouthHorizMask = smoothstep(0.12, 0.0, distToMouthX);
+    if (distToMouthX < (uMouthWidth * 1.35) && uv.y > (uChinY - 0.01) && uv.y < (mouthCenter.y + 0.07)) {
+      float mouthHorizMask = smoothstep(uMouthWidth * 1.15, 0.0, distToMouthX);
 
-      // Jaw and Lower Lip Depress (Opens mouth naturally downwards)
+      // Jaw and Lower Lip Depress
       if (uv.y <= mouthCenter.y) {
-        float lowerJawInfluence = smoothstep(0.35, mouthCenter.y, uv.y) * mouthHorizMask;
+        float lowerJawInfluence = smoothstep(uChinY, mouthCenter.y, uv.y) * mouthHorizMask;
         uv.y += (uJawOpen * 0.024 + uLowerLipDepress * 0.016) * lowerJawInfluence;
       }
 
-      // Upper Lip Raise (Opens mouth slightly upwards)
-      if (uv.y > mouthCenter.y && uv.y < 0.50) {
-        float upperLipInfluence = smoothstep(0.50, mouthCenter.y, uv.y) * mouthHorizMask;
+      // Upper Lip Raise
+      if (uv.y > mouthCenter.y && uv.y < (mouthCenter.y + 0.065)) {
+        float upperLipInfluence = smoothstep(mouthCenter.y + 0.065, mouthCenter.y, uv.y) * mouthHorizMask;
         uv.y -= uUpperLipRaise * 0.012 * upperLipInfluence;
       }
 
-      // Lip Width (lateral spread vs narrow)
-      float cornerInfluence = smoothstep(0.015, 0.075, distToMouthX) * smoothstep(0.05, 0.0, distToMouthY);
+      // Lip Width
+      float cornerInfluence = smoothstep(uMouthWidth * 0.15, uMouthWidth * 0.75, distToMouthX) * smoothstep(0.05, 0.0, distToMouthY);
       uv.x += (uv.x - mouthCenter.x) * uLipWidth * cornerInfluence * 0.32;
 
-      // Lip Pucker (tight circular rounding for O/U)
+      // Lip Pucker
       float puckerRadius = length(uv - mouthCenter);
-      float puckerInfluence = smoothstep(0.08, 0.0, puckerRadius);
+      float puckerInfluence = smoothstep(uMouthWidth * 0.85, 0.0, puckerRadius);
       uv.x -= (uv.x - mouthCenter.x) * uLipPucker * puckerInfluence * 0.26;
       uv.y -= (uv.y - mouthCenter.y) * uLipPucker * puckerInfluence * 0.15;
     }
 
     // -------------------------------------------------------------------------
-    // 2. Eyebrow Micro-Expressions
+    // 2. Eyebrow Micro-Expressions anchored to CV Eyebrows
     // -------------------------------------------------------------------------
-    if (uv.y > 0.66 && uv.y < 0.74 && abs(uv.x - 0.502) < 0.14) {
-      float browInfluence = smoothstep(0.66, 0.70, uv.y) * smoothstep(0.74, 0.70, uv.y) * smoothstep(0.14, 0.0, abs(uv.x - 0.502));
+    if (abs(uv.y - uEyebrowY) < 0.045 && abs(uv.x - 0.502) < 0.15) {
+      float browInfluence = smoothstep(0.045, 0.0, abs(uv.y - uEyebrowY)) * smoothstep(0.15, 0.0, abs(uv.x - 0.502));
       uv.y += uEyebrowRaise * browInfluence * 0.018;
     }
 
     // -------------------------------------------------------------------------
-    // 3. Eyelid Micro-Blinks
+    // 3. Eyelid Micro-Blinks anchored to CV Eyes
     // -------------------------------------------------------------------------
     if (uBlink > 0.005) {
-      float eyeYCenter = 0.635;
-      float eyeXCenter = 0.502;
-      float distY = abs(uv.y - eyeYCenter);
-      float distX = abs(uv.x - eyeXCenter);
+      float distY = abs(uv.y - uEyeCenter.y);
+      float distX = abs(uv.x - uEyeCenter.x);
       
-      if (distY < 0.038 && distX < 0.11) {
-        float eyeMask = smoothstep(0.038, 0.0, distY) * smoothstep(0.11, 0.0, distX);
-        uv.y += (uv.y - eyeYCenter) * uBlink * eyeMask * 0.44;
+      if (distY < 0.040 && distX < 0.12) {
+        float eyeMask = smoothstep(0.040, 0.0, distY) * smoothstep(0.12, 0.0, distX);
+        uv.y += (uv.y - uEyeCenter.y) * uBlink * eyeMask * 0.44;
       }
     }
 
@@ -162,8 +165,8 @@ const avatarFragmentShader = `
     // -------------------------------------------------------------------------
     // 4. Subtle Oral Cavity Depth Shadowing
     // -------------------------------------------------------------------------
-    if (uJawOpen > 0.12 && distToMouthX < 0.065 && distToMouthY < 0.022) {
-      float mouthInterior = smoothstep(0.065, 0.0, distToMouthX) * smoothstep(0.022, 0.0, distToMouthY);
+    if (uJawOpen > 0.12 && distToMouthX < (uMouthWidth * 0.6) && distToMouthY < 0.022) {
+      float mouthInterior = smoothstep(uMouthWidth * 0.6, 0.0, distToMouthX) * smoothstep(0.022, 0.0, distToMouthY);
       float shadowFactor = 1.0 - (mouthInterior * uJawOpen * 0.35);
       texColor.rgb *= shadowFactor;
     }
@@ -202,6 +205,9 @@ export const InterviewerAvatar = ({ mousePos }) => {
   const { selectedInterviewer, avatarState, transitionSubphase } = useInterview();
   const meshRef = useRef();
   const materialRef = useRef();
+
+  // Retrieve calibrated face rig for selected interviewer persona
+  const faceRig = useMemo(() => getFaceRig(selectedInterviewer.id), [selectedInterviewer.id]);
 
   // Instantiate dedicated modular sub-controllers
   const lipSyncController = useMemo(() => new InterviewerLipSyncController(), []);
@@ -257,12 +263,17 @@ export const InterviewerAvatar = ({ mousePos }) => {
       uLipClose: { value: 0.0 },
       uMouthCornerPull: { value: 0.0 },
       uChinRaise: { value: 0.0 },
+      uMouthCenter: { value: new THREE.Vector2(faceRig.mouth.center.x, faceRig.mouth.center.y) },
+      uMouthWidth: { value: faceRig.mouth.width },
+      uEyeCenter: { value: new THREE.Vector2(0.502, (faceRig.eyes.left.y + faceRig.eyes.right.y) * 0.5) },
+      uEyebrowY: { value: (faceRig.eyebrows.left.y + faceRig.eyebrows.right.y) * 0.5 },
+      uChinY: { value: faceRig.jaw.chin.y },
       uFadeIn: { value: 0.0 },
       uKeyLightColor: { value: new THREE.Color('#dce6f2') },
       uFillLightColor: { value: new THREE.Color('#f0dfc8') },
       uState: { value: 0 }
     };
-  }, [texture, depthMap]);
+  }, [texture, depthMap, faceRig]);
 
   useFrame((state, delta) => {
     if (!materialRef.current) return;
@@ -322,7 +333,7 @@ export const InterviewerAvatar = ({ mousePos }) => {
       {/* 
         Modular Architecture: 
         If a rigged 3D GLTF avatar is loaded later, render <primitive object={model} /> here.
-        Currently using near-photorealistic depth-displaced digital human mesh.
+        Currently using near-photorealistic depth-displaced digital human mesh calibrated with MediaPipe CV landmarks.
       */}
       <mesh ref={meshRef} position={[0, 0, 0]}>
         <planeGeometry args={[width, height, 128, 128]} />

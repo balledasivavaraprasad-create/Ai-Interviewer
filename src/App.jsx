@@ -4,6 +4,7 @@ import { BackgroundAmbience } from './components/Shared/BackgroundAmbience';
 import { BrandHeader } from './components/Shared/BrandHeader';
 import { OnboardingFlow } from './components/OnboardingFlow/OnboardingFlow';
 import { InterviewRoom } from './components/InterviewRoom/InterviewRoom';
+import { DevTestPanel } from './components/Shared/DevTestPanel';
 
 const AppContent = () => {
   const { currentStep } = useInterview();
@@ -22,6 +23,9 @@ const AppContent = () => {
 
       {/* Screen 3 (Cinematic 3D Office Environment & Interviewer) */}
       <InterviewRoom />
+
+      {/* Developer Audio & Voice Verification Panel */}
+      <DevTestPanel />
     </div>
   );
 };

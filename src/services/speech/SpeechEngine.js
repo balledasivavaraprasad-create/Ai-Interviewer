@@ -1,31 +1,41 @@
 import { VisemeTimeline } from './VisemeTimeline';
 import { AudioAnalyzer } from './AudioAnalyzer';
+import { VOICE_PROFILES } from '../../config/interviewers';
 
 /**
  * Unified Speech Engine and Authoritative Timeline Coordinator.
- * Manages audio playback, Web Speech Synthesis fallback, and synchronized viseme generation.
+ * Permanently locks voice profile to selected interviewer persona for the entire session.
  */
 class SpeechEngineService {
   constructor() {
     this.timeline = new VisemeTimeline();
     this.isSpeaking = false;
     this.startTime = 0;
-    this.pauseTime = 0;
     this.currentText = '';
     this.listeners = new Set();
     this.animFrameId = null;
     this.activeUtterance = null;
-    this.customProvider = null; // Future backend TTS provider
+    this.customProvider = null;
     this.audioElement = null;
+
+    // Locked Session Persona
     this.currentGender = 'female';
+    this.lockedVoice = null;
     this.voicesLoaded = false;
     this.availableVoices = [];
 
-    // Initialize browser voices
+    // Initialize browser speech synthesis
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const loadVoices = () => {
-        this.availableVoices = window.speechSynthesis.getVoices() || [];
-        this.voicesLoaded = this.availableVoices.length > 0;
+        const voices = window.speechSynthesis.getVoices() || [];
+        if (voices.length > 0) {
+          this.availableVoices = voices;
+          this.voicesLoaded = true;
+          // Refresh locked voice if gender is set
+          if (this.currentGender) {
+            this.lockSessionVoice(this.currentGender);
+          }
+        }
       };
       loadVoices();
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
@@ -35,9 +45,55 @@ class SpeechEngineService {
   }
 
   /**
-   * Subscribe to authoritative speech timeline frames (~60fps).
-   * Callback receives: { time, currentWordIndex, weights, isSpeaking, energy, text }
+   * Permanently locks the interviewer voice for the session.
    */
+  lockSessionVoice(gender) {
+    this.currentGender = gender === 'male' ? 'male' : 'female';
+    const profile = VOICE_PROFILES[this.currentGender] || VOICE_PROFILES.female;
+
+    const voices = this.availableVoices.length > 0 
+      ? this.availableVoices 
+      : (typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis.getVoices() : []);
+
+    if (voices.length === 0) {
+      this.lockedVoice = null;
+      return;
+    }
+
+    const preferredList = profile.preferredWebSpeechVoices;
+
+    // 1. Search for explicit preferred names
+    for (const name of preferredList) {
+      const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+      if (match) {
+        this.lockedVoice = match;
+        return;
+      }
+    }
+
+    // 2. Strict gender-filtered fallback
+    const enVoices = voices.filter(v => v.lang.startsWith('en'));
+    const isFemale = this.currentGender === 'female';
+
+    if (isFemale) {
+      // Find voice that is NOT an obvious male name
+      const maleNames = ['alex', 'daniel', 'fred', 'oliver', 'tom', 'david', 'guy', 'george'];
+      const candidate = enVoices.find(v => {
+        const lower = v.name.toLowerCase();
+        return !maleNames.some(m => lower.includes(m)) && (lower.includes('female') || lower.includes('woman') || lower.includes('natural') || !lower.includes('male'));
+      });
+      this.lockedVoice = candidate || enVoices[0] || voices[0];
+    } else {
+      // Find voice with male keywords or in male list
+      const femaleNames = ['samantha', 'victoria', 'karen', 'tessa', 'moira', 'zira', 'jenny', 'fiona'];
+      const candidate = enVoices.find(v => {
+        const lower = v.name.toLowerCase();
+        return !femaleNames.some(f => lower.includes(f)) && (lower.includes('male') || lower.includes('man') || !lower.includes('female'));
+      });
+      this.lockedVoice = candidate || enVoices[0] || voices[0];
+    }
+  }
+
   subscribe(callback) {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
@@ -53,59 +109,15 @@ class SpeechEngineService {
     });
   }
 
-  /**
-   * Set custom backend TTS provider for future production deployment.
-   * Provider signature: { synthesize(text, gender): Promise<{ audioUrl, visemes, duration }> }
-   */
   setCustomTTSProvider(provider) {
     this.customProvider = provider;
-  }
-
-  /**
-   * Selects natural executive voice matching persona.
-   */
-  getBestVoice(gender) {
-    if (!this.voicesLoaded || this.availableVoices.length === 0) {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        this.availableVoices = window.speechSynthesis.getVoices() || [];
-      }
-    }
-
-    const voices = this.availableVoices;
-    const isFemale = gender === 'female';
-
-    // Prioritize natural neural / enhanced voices
-    const preferredFemaleNames = ['Samantha', 'Victoria', 'Karen', 'Moira', 'Google US English', 'Zira', 'Jenny'];
-    const preferredMaleNames = ['Daniel', 'Alex', 'Fred', 'Oliver', 'Google UK English Male', 'David', 'Guy'];
-
-    const targetNames = isFemale ? preferredFemaleNames : preferredMaleNames;
-
-    for (const name of targetNames) {
-      const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
-      if (match) return match;
-    }
-
-    // Secondary fallback: filter by lang (en) and name keywords
-    const enVoices = voices.filter(v => v.lang.startsWith('en'));
-    if (enVoices.length > 0) {
-      if (isFemale) {
-        const f = enVoices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman'));
-        if (f) return f;
-      } else {
-        const m = enVoices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('man'));
-        if (m) return m;
-      }
-      return enVoices[0];
-    }
-
-    return voices[0] || null;
   }
 
   /**
    * Starts speaking text with timeline synchronization.
    */
   async speak(text, options = {}) {
-    // 1. Cleanly stop any existing speech session
+    // 1. Immediately cancel any prior speech
     this.stop();
 
     if (!text || !text.trim()) return;
@@ -113,12 +125,17 @@ class SpeechEngineService {
     await AudioAnalyzer.unlock();
 
     this.currentText = text.trim();
-    this.currentGender = options.gender || 'female';
+    if (options.gender) {
+      this.lockSessionVoice(options.gender);
+    } else if (!this.lockedVoice) {
+      this.lockSessionVoice(this.currentGender);
+    }
+
     const onStart = options.onStart;
     const onEnd = options.onEnd;
     const onError = options.onError;
 
-    // Check if custom backend TTS provider is registered
+    // Check custom backend TTS provider if configured
     if (this.customProvider) {
       try {
         const result = await this.customProvider.synthesize(this.currentText, this.currentGender);
@@ -130,11 +147,11 @@ class SpeechEngineService {
       }
     }
 
-    // Default: Browser Web Speech API with viseme timeline synthesis
-    this.playBrowserSpeech(text, options, onStart, onEnd, onError);
+    // Default: Browser Web Speech API with locked voice profile
+    this.playBrowserSpeech(this.currentText, onStart, onEnd, onError);
   }
 
-  playBrowserSpeech(text, options, onStart, onEnd, onError) {
+  playBrowserSpeech(text, onStart, onEnd, onError) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       console.warn('SpeechSynthesis not supported on this browser.');
       if (onError) onError(new Error('SpeechSynthesis not supported'));
@@ -142,37 +159,26 @@ class SpeechEngineService {
     }
 
     const words = text.split(/\s+/).filter(Boolean);
-    // Average natural speaking rate ~ 140 words/min -> ~0.43s per word
-    const estimatedDuration = Math.max((words.length * 0.42), 1.5);
+    const profile = VOICE_PROFILES[this.currentGender] || VOICE_PROFILES.female;
 
+    // Average natural executive cadence
+    const estimatedDuration = Math.max(words.length * 0.42, 1.5);
     this.timeline.buildFromText(text, estimatedDuration);
 
     const utterance = new SpeechSynthesisUtterance(text);
     this.activeUtterance = utterance;
 
-    const voice = this.getBestVoice(this.currentGender);
-    if (voice) {
-      utterance.voice = voice;
+    // Ensure session voice is locked
+    if (!this.lockedVoice) {
+      this.lockSessionVoice(this.currentGender);
     }
 
-    utterance.rate = 0.98; // Professional, calm cadence
-    utterance.pitch = this.currentGender === 'female' ? 1.02 : 0.96;
+    if (this.lockedVoice) {
+      utterance.voice = this.lockedVoice;
+    }
 
-    // Speech boundary tracking for exact word alignment
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        const charIdx = event.charIndex;
-        // Find corresponding word index
-        let accumulated = 0;
-        for (let i = 0; i < words.length; i++) {
-          if (accumulated >= charIdx || i === words.length - 1) {
-            // Update timeline reference
-            break;
-          }
-          accumulated += words[i].length + 1;
-        }
-      }
-    };
+    utterance.rate = profile.rate;
+    utterance.pitch = profile.pitch;
 
     utterance.onstart = () => {
       this.isSpeaking = true;
@@ -186,7 +192,7 @@ class SpeechEngineService {
     };
 
     utterance.onerror = (e) => {
-      console.warn('SpeechSynthesis utterance error:', e);
+      console.warn('SpeechSynthesis error:', e);
       this.handleSpeechComplete(onEnd);
       if (onError) onError(e);
     };
@@ -194,7 +200,7 @@ class SpeechEngineService {
     try {
       window.speechSynthesis.speak(utterance);
     } catch (e) {
-      console.error('Error calling speechSynthesis.speak:', e);
+      console.error('Error in speechSynthesis.speak:', e);
       this.handleSpeechComplete(onEnd);
     }
   }
@@ -228,7 +234,7 @@ class SpeechEngineService {
     };
 
     audio.play().catch(err => {
-      console.warn('Audio play prevented by browser:', err);
+      console.warn('Audio play blocked:', err);
       this.handleSpeechComplete(onEnd);
     });
   }
@@ -244,7 +250,6 @@ class SpeechEngineService {
       const elapsed = (performance.now() - this.startTime) / 1000.0;
       const sample = this.timeline.sample(elapsed);
 
-      // Simulate subtle voice frequency energy from viseme openness
       const simulatedEnergy = Math.min((sample.weights.jawOpen * 0.7) + (Math.abs(sample.weights.lipWidth) * 0.3), 1.0);
       AudioAnalyzer.setSimulatedEnergy(simulatedEnergy);
 
@@ -280,7 +285,6 @@ class SpeechEngineService {
       this.animFrameId = null;
     }
 
-    // Settle timeline to neutral silence
     const sample = this.timeline.sample(this.timeline.totalDuration + 1);
     AudioAnalyzer.setSimulatedEnergy(0);
 
@@ -297,9 +301,6 @@ class SpeechEngineService {
     if (onEnd) onEnd();
   }
 
-  /**
-   * Immediately halts any speech audio and resets the avatar mouth to neutral resting position.
-   */
   stop() {
     this.isSpeaking = false;
 
@@ -320,7 +321,6 @@ class SpeechEngineService {
 
     AudioAnalyzer.setSimulatedEnergy(0);
 
-    // Notify listeners with silence
     this.notify({
       time: 0,
       currentWordIndex: -1,

@@ -1,7 +1,7 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { useInterview, AVATAR_STATES } from '../../context/InterviewContext';
-import { RotateCcw, SkipForward, Square, Volume2, Mic } from 'lucide-react';
+import { RotateCcw, SkipForward, Square, Sparkles, Send } from 'lucide-react';
 
 export const LiveSubtitleTranscript = () => {
   const {
@@ -11,15 +11,28 @@ export const LiveSubtitleTranscript = () => {
     currentWordIndex,
     isInterviewerSpeaking,
     speechEnergy,
+    currentQuestion,
+    currentQuestionIndex,
+    isGeneratingQuestion,
     askNextQuestion,
     replayQuestion,
     stopSpeaking
   } = useInterview();
 
+  const [candidateResponse, setCandidateResponse] = useState('');
+
   if (!spokenText) return null;
 
   const words = spokenText.split(/\s+/).filter(Boolean);
   const isListening = avatarState === AVATAR_STATES.LISTENING;
+
+  const handleSendResponse = (e) => {
+    e.preventDefault();
+    if (!candidateResponse.trim() || isGeneratingQuestion) return;
+    const resp = candidateResponse.trim();
+    setCandidateResponse('');
+    askNextQuestion(resp);
+  };
 
   return (
     <motion.div
@@ -31,9 +44,9 @@ export const LiveSubtitleTranscript = () => {
       role="region"
       aria-label="Interview Question Subtitle"
     >
-      {/* Speaker Header & Live Micro-Waveform */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* Speaker Header, Competency Badge & Micro-Waveform */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span className="dialogue-speaker">
             {selectedInterviewer.name}
           </span>
@@ -45,11 +58,28 @@ export const LiveSubtitleTranscript = () => {
             textTransform: 'uppercase',
             letterSpacing: '0.06em'
           }}>
-            {isInterviewerSpeaking ? 'Speaking' : 'Listening for response'}
+            {isGeneratingQuestion 
+              ? 'Gemini Formulating Question...' 
+              : isInterviewerSpeaking 
+                ? 'Speaking' 
+                : 'Listening'}
           </span>
+
+          {currentQuestion?.competency && (
+            <span style={{
+              fontSize: 10.5,
+              padding: '2px 8px',
+              borderRadius: 4,
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              color: 'var(--text-warm)'
+            }}>
+              {currentQuestion.competency}
+            </span>
+          )}
         </div>
 
-        {/* Subtle Micro Audio Waveform (Reacts to actual audio energy) */}
+        {/* Subtle Micro Audio Waveform (Reacts to live speech energy) */}
         {isInterviewerSpeaking && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 16 }}>
             {[0.6, 1.0, 0.8, 1.2, 0.7].map((scale, i) => (
@@ -70,7 +100,7 @@ export const LiveSubtitleTranscript = () => {
         {isListening && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--status-emerald)' }}>
             <span className="live-dot" style={{ width: 6, height: 6 }} />
-            <span>Candidate mic ready</span>
+            <span>Ready for your answer</span>
           </div>
         )}
       </div>
@@ -113,16 +143,39 @@ export const LiveSubtitleTranscript = () => {
         })}
       </p>
 
+      {/* Dynamic Candidate Response Box (Foundation for Gemini follow-ups) */}
+      {isListening && (
+        <form onSubmit={handleSendResponse} style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+          <input
+            type="text"
+            className="form-input"
+            style={{ padding: '8px 12px', fontSize: 13, flex: 1 }}
+            placeholder="Type your response or summarize your technical answer..."
+            value={candidateResponse}
+            onChange={(e) => setCandidateResponse(e.target.value)}
+          />
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{ width: 'auto', padding: '8px 16px', fontSize: 12.5 }}
+            disabled={!candidateResponse.trim() || isGeneratingQuestion}
+          >
+            <span>Answer</span>
+            <Send size={13} />
+          </button>
+        </form>
+      )}
+
       {/* Minimalist Question Controls (Replay, Stop, Next Question) */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: 16,
+        marginTop: 14,
         paddingTop: 12,
         borderTop: '1px solid rgba(255, 255, 255, 0.06)'
       }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isInterviewerSpeaking ? (
             <button
               type="button"
@@ -148,16 +201,17 @@ export const LiveSubtitleTranscript = () => {
           <button
             type="button"
             className="quick-role-chip"
-            onClick={askNextQuestion}
-            title="Move to next interview question"
+            onClick={() => askNextQuestion()}
+            disabled={isGeneratingQuestion}
+            title="Generate next question via Gemini"
           >
-            <SkipForward size={11} style={{ marginRight: 5 }} />
+            <Sparkles size={11} style={{ marginRight: 5 }} color="var(--accent-warm-gold)" />
             Next Question
           </button>
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          {isListening ? 'Take your time. Speak when ready.' : 'Listening...'}
+          Question {currentQuestionIndex + 1}
         </div>
       </div>
     </motion.div>

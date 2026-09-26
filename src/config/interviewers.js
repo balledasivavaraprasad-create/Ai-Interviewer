@@ -4,8 +4,32 @@ import maleImg from '../assets/male.jpg';
 import maleDepth from '../assets/male_depth.png';
 
 /**
+ * Locked, centralized voice configurations for entire session duration.
+ * Conforms to Phase 10 & 12 specifications. Voice never changes dynamically per question.
+ */
+export const VOICE_PROFILES = {
+  female: {
+    id: 'female_voice',
+    gender: 'female',
+    displayName: 'Sarah Chen Voice',
+    geminiVoice: 'Aoede', // Gemini Female Voice
+    preferredWebSpeechVoices: ['Samantha', 'Victoria', 'Ava', 'Karen', 'Tessa', 'Moira', 'Zira', 'Jenny'],
+    pitch: 1.04,
+    rate: 0.96
+  },
+  male: {
+    id: 'male_voice',
+    gender: 'male',
+    displayName: 'David Kim Voice',
+    geminiVoice: 'Puck', // Gemini Male Voice
+    preferredWebSpeechVoices: ['Daniel', 'Alex', 'Tom', 'Oliver', 'Fred', 'David', 'Guy'],
+    pitch: 0.94,
+    rate: 0.98
+  }
+};
+
+/**
  * Reusable interviewer avatar configuration.
- * Extensible for future GLTF models, audio TTS voices, viseme mapping, and LLM persona prompts.
  */
 export const INTERVIEWERS = {
   female: {
@@ -21,15 +45,8 @@ export const INTERVIEWERS = {
     image: femaleImg,
     depthMap: femaleDepth,
     aspectRatio: 16 / 9,
-    // Future 3D asset slot (e.g. GLTF / Metahuman / ReadyPlayerMe)
-    model3d: null, 
-    // Future TTS audio & voice configuration
-    voiceConfig: {
-      voiceId: 'en-US-Journey-F',
-      pitch: 1.0,
-      speakingRate: 0.98,
-      accent: 'Neutral Professional'
-    }
+    voiceProfile: VOICE_PROFILES.female,
+    model3d: null
   },
   male: {
     id: 'male',
@@ -44,15 +61,8 @@ export const INTERVIEWERS = {
     image: maleImg,
     depthMap: maleDepth,
     aspectRatio: 16 / 9,
-    // Future 3D asset slot (e.g. GLTF / Metahuman / ReadyPlayerMe)
-    model3d: null,
-    // Future TTS audio & voice configuration
-    voiceConfig: {
-      voiceId: 'en-US-Journey-D',
-      pitch: 0.95,
-      speakingRate: 1.0,
-      accent: 'Neutral Professional'
-    }
+    voiceProfile: VOICE_PROFILES.male,
+    model3d: null
   }
 };
 

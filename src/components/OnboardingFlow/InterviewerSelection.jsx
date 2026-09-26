@@ -46,7 +46,6 @@ export const InterviewerSelection = () => {
               className="interviewer-portrait"
               loading="eager"
             />
-            <div className="interviewer-image-overlay" />
             <div className="selection-check-indicator">
               {interviewerGender === 'female' && <Check size={16} strokeWidth={2.5} />}
             </div>
@@ -82,7 +81,6 @@ export const InterviewerSelection = () => {
               className="interviewer-portrait"
               loading="eager"
             />
-            <div className="interviewer-image-overlay" />
             <div className="selection-check-indicator">
               {interviewerGender === 'male' && <Check size={16} strokeWidth={2.5} />}
             </div>
