@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useInterview, AVATAR_STATES } from '../../context/InterviewContext';
 import { Mic, MicOff, Video, VideoOff, Play, Volume2, ShieldCheck } from 'lucide-react';
 import { LiveSubtitleTranscript } from './LiveSubtitleTranscript';
+import { CandidateVideoTile } from './CandidateVideoTile';
 
 export const InterviewRoomUI = () => {
   const {
@@ -52,6 +53,15 @@ export const InterviewRoomUI = () => {
           <span>Private Session · Live Voice & Lip-Sync Active</span>
         </motion.div>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* CANDIDATE WEBCAM & COMPUTER VISION TELEMETRY TILE                  */}
+      {/* ------------------------------------------------------------------ */}
+      <AnimatePresence>
+        {isSceneSettled && (
+          <CandidateVideoTile />
+        )}
+      </AnimatePresence>
 
       {/* ------------------------------------------------------------------ */}
       {/* PROGRESSIVE SUBTITLE TRANSCRIPT                                    */}

@@ -1,6 +1,7 @@
 import { VisemeTimeline } from './VisemeTimeline';
 import { AudioAnalyzer } from './AudioAnalyzer';
 import { VOICE_PROFILES } from '../../config/interviewers';
+import { GlobalAudioVisemeEngine } from './AudioVisemeSyncEngine';
 
 /**
  * Unified Speech Engine and Authoritative Timeline Coordinator.
@@ -161,9 +162,9 @@ class SpeechEngineService {
     const words = text.split(/\s+/).filter(Boolean);
     const profile = VOICE_PROFILES[this.currentGender] || VOICE_PROFILES.female;
 
-    // Average natural executive cadence
+    // Natural executive cadence word timing for subtitles
     const estimatedDuration = Math.max(words.length * 0.42, 1.5);
-    this.timeline.buildFromText(text, estimatedDuration);
+    this.timeline.buildWordTranscript(text, estimatedDuration);
 
     const utterance = new SpeechSynthesisUtterance(text);
     this.activeUtterance = utterance;
@@ -206,15 +207,19 @@ class SpeechEngineService {
   }
 
   playCustomAudio(result, onStart, onEnd, onError) {
-    if (result.visemes && result.visemes.length > 0) {
-      this.timeline.buildFromBackendEvents(result.visemes, result.words, result.duration);
+    if (result && result.segments && result.segments.length > 0) {
+      this.timeline.buildFromAudioSegments(result);
     } else {
-      this.timeline.buildFromText(this.currentText, result.duration);
+      this.timeline.buildWordTranscript(this.currentText, result.duration);
     }
 
     const audio = new Audio(result.audioUrl);
     this.audioElement = audio;
     AudioAnalyzer.connectMediaElement(audio);
+
+    // Audio-clock viseme synchronization binding
+    GlobalAudioVisemeEngine.bindAudioElement(audio);
+    GlobalAudioVisemeEngine.loadSpeechTimeline(result);
 
     audio.onplay = () => {
       this.isSpeaking = true;
@@ -318,6 +323,8 @@ class SpeechEngineService {
       this.audioElement.currentTime = 0;
       this.audioElement = null;
     }
+
+    GlobalAudioVisemeEngine.reset();
 
     AudioAnalyzer.setSimulatedEnergy(0);
 

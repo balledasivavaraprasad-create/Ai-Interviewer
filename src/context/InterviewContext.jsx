@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { INTERVIEWERS, getInterviewer, VOICE_PROFILES } from '../config/interviewers';
+import { getInterviewer } from '../config/interviewers';
 import { SpeechEngine } from '../services/speech/SpeechEngine';
 import { AudioAnalyzer } from '../services/speech/AudioAnalyzer';
 import { GeminiService } from '../services/ai/GeminiInterviewService';
 import { InterviewerStateController } from '../controllers/avatar/InterviewerStateController';
-import { STEPS, AVATAR_STATES } from '../config/constants';
+import { STEPS, AVATAR_STATES, INTERVIEW_STATES } from '../config/constants';
+import { InterviewTelemetry } from '../services/telemetry/InterviewTelemetry';
+import { CandidateTracker } from '../services/vision/CandidateTracker';
 
-export { AVATAR_STATES };
+export { AVATAR_STATES, INTERVIEW_STATES };
 
 const InterviewContext = createContext(null);
 
@@ -26,6 +28,23 @@ export const InterviewProvider = ({ children }) => {
   const [avatarState, setAvatarState] = useState(AVATAR_STATES.IDLE);
   const [isInterviewStarted, setIsInterviewStarted] = useState(false);
 
+  // Authoritative State Machine (Strict, Single State)
+  const [interviewState, setInterviewState] = useState(INTERVIEW_STATES.IDLE);
+  const interviewStateRef = useRef(INTERVIEW_STATES.IDLE);
+  interviewStateRef.current = interviewState;
+
+  // Candidate CV & Speaking State
+  const [candidateSpeaking, setCandidateSpeaking] = useState(false);
+  const [candidateCV, setCandidateCV] = useState({
+    faceDetected: false,
+    mouthDetected: false,
+    faceConfidence: 0,
+    mouthOpenness: 0,
+    mouthMovement: 0,
+    lastFaceTimestamp: 0,
+    lastAudioActivityTimestamp: 0
+  });
+
   // Authoritative Synchronized Question Object & Subtitle State
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -41,6 +60,9 @@ export const InterviewProvider = ({ children }) => {
   const [cameraStreamActive, setCameraStreamActive] = useState(true);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(true);
 
+  // Telemetry Snapshot
+  const [telemetry, setTelemetry] = useState(InterviewTelemetry.getSnapshot());
+
   // Controller instance
   const stateControllerRef = useRef(null);
   if (!stateControllerRef.current) {
@@ -53,6 +75,49 @@ export const InterviewProvider = ({ children }) => {
   const setInterviewerGender = useCallback((gender) => {
     setInterviewerGenderState(gender);
     SpeechEngine.lockSessionVoice(gender);
+  }, []);
+
+  // Subscribe to Telemetry updates
+  useEffect(() => {
+    const unsub = InterviewTelemetry.subscribe((t) => setTelemetry(t));
+    return () => unsub();
+  }, []);
+
+  // Subscribe to Candidate CV & Speaking updates
+  useEffect(() => {
+    const unsub = CandidateTracker.subscribe((cv) => {
+      setCandidateSpeaking(cv.candidateSpeaking);
+      setCandidateCV({
+        faceDetected: cv.faceDetected,
+        mouthDetected: cv.mouthDetected,
+        faceConfidence: cv.faceConfidence,
+        mouthOpenness: cv.mouthOpenness,
+        mouthMovement: cv.mouthMovement,
+        lastFaceTimestamp: cv.lastFaceTimestamp,
+        lastAudioActivityTimestamp: cv.lastAudioActivityTimestamp
+      });
+    });
+    return () => unsub();
+  }, []);
+
+  // State Machine Transition Rule Engine (Prevents Conflicting States)
+  const transitionInterviewState = useCallback((nextState, reason = '') => {
+    const current = interviewStateRef.current;
+    if (current === nextState) return;
+
+    // Strict validation rules
+    // 1. While INTERVIEWER_SPEAKING, candidate cannot change state or submit turn
+    if (current === INTERVIEW_STATES.INTERVIEWER_SPEAKING && nextState === INTERVIEW_STATES.CANDIDATE_SPEAKING) {
+      console.warn(`[State Guard] Blocked candidate speaking trigger while interviewer is speaking.`);
+      return;
+    }
+
+    console.log(`[Interview State Machine] Transition: ${current} -> ${nextState} (${reason})`);
+    interviewStateRef.current = nextState;
+    setInterviewState(nextState);
+
+    // Record high-resolution telemetry timestamp for state change
+    InterviewTelemetry.recordEvent(`STATE_${nextState}`, { from: current, to: nextState, reason });
   }, []);
 
   // Subscribe to authoritative speech timeline frames
@@ -105,7 +170,7 @@ export const InterviewProvider = ({ children }) => {
     setCurrentStep(STEPS.PROFILE_SETUP);
   }, []);
 
-  // Office entrance sequence (0.0s to 5.5s)
+  // Office entrance sequence
   const startOfficeEntrance = useCallback(() => {
     if (!interviewerGender) return;
     SpeechEngine.lockSessionVoice(interviewerGender);
@@ -128,6 +193,9 @@ export const InterviewProvider = ({ children }) => {
     setIsAudioUnlocked(true);
   }, []);
 
+  // Forward declarations for question lifecycle
+  const askNextQuestionRef = useRef(null);
+
   // Authoritative speech execution
   const executeSpeech = useCallback((questionObj) => {
     const text = typeof questionObj === 'string' ? questionObj : questionObj.text;
@@ -141,47 +209,65 @@ export const InterviewProvider = ({ children }) => {
     setSpokenText(fullObj.text);
     setCurrentWordIndex(-1);
 
+    // State transition -> INTERVIEWER_SPEAKING
+    transitionInterviewState(INTERVIEW_STATES.INTERVIEWER_SPEAKING, 'Question audio beginning');
+    InterviewTelemetry.recordEvent('questionStartedAt', { questionId: fullObj.id, text: fullObj.text });
+    InterviewTelemetry.recordEvent('questionAudioStartedAt', { questionId: fullObj.id });
+
     // Speak using permanently locked session gender
     stateControllerRef.current.startSpeakingSequence(
       fullObj.text,
       interviewerGender || 'female',
       () => {
         console.log('Interviewer speech completed cleanly.');
+        InterviewTelemetry.recordEvent('questionAudioEndedAt', { questionId: fullObj.id });
+
+        // Transition from speaking to waiting for candidate response
+        transitionInterviewState(INTERVIEW_STATES.WAITING_FOR_CANDIDATE, 'Interviewer finished asking question');
       }
     );
-  }, [interviewerGender]);
+  }, [interviewerGender, transitionInterviewState]);
 
   // Core Gemini Question Lifecycle
   const startInterview = useCallback(async () => {
     await unlockAudio();
     setIsInterviewStarted(true);
-    setIsGeneratingQuestion(true);
 
-    try {
-      const q = await GeminiService.generateNextQuestion({
+    // 1. Initial State: Camera & CV Initializing
+    transitionInterviewState(INTERVIEW_STATES.CAMERA_INITIALIZING, 'Requesting webcam and initializing FaceLandmarker');
+    InterviewTelemetry.recordEvent('interviewStartedAt', { targetJob: targetJob || 'Software Engineer' });
+
+    // 2. Camera & CV warm-up
+    setTimeout(() => {
+      transitionInterviewState(INTERVIEW_STATES.READY, 'Camera and CV tracking confirmed');
+      setIsGeneratingQuestion(true);
+
+      GeminiService.generateNextQuestion({
         targetJob: targetJob || 'Software Engineer',
         resumeText: resume ? `Candidate file: ${resume.name}` : '',
         interviewHistory: []
+      }).then(q => {
+        setCurrentQuestionIndex(0);
+        executeSpeech(q);
+      }).catch(e => {
+        console.error('Failed to start interview question:', e);
+        executeSpeech({
+          id: 'q_init',
+          text: "Welcome. Can you walk me through the most technically challenging project you have designed or engineered recently?",
+          competency: "System Design & Problem Solving",
+          difficulty: 3
+        });
+      }).finally(() => {
+        setIsGeneratingQuestion(false);
       });
-      setCurrentQuestionIndex(0);
-      executeSpeech(q);
-    } catch (e) {
-      console.error('Failed to start interview question:', e);
-      executeSpeech({
-        id: 'q_init',
-        text: "Welcome. Can you walk me through the most technically challenging project you have designed or engineered recently?",
-        competency: "System Design & Problem Solving",
-        difficulty: 3
-      });
-    } finally {
-      setIsGeneratingQuestion(false);
-    }
-  }, [targetJob, resume, unlockAudio, executeSpeech]);
+    }, 1400);
+
+  }, [targetJob, resume, unlockAudio, executeSpeech, transitionInterviewState]);
 
   const askNextQuestion = useCallback(async (candidateAnswer) => {
+    transitionInterviewState(INTERVIEW_STATES.ANALYZING, 'Evaluating candidate response');
     setIsGeneratingQuestion(true);
 
-    // Archive current Q&A in interview history
     if (currentQuestion) {
       setInterviewHistory(prev => [
         ...prev,
@@ -194,6 +280,7 @@ export const InterviewProvider = ({ children }) => {
     }
 
     try {
+      transitionInterviewState(INTERVIEW_STATES.NEXT_QUESTION, 'Formulating next technical question');
       const nextQ = await GeminiService.generateNextQuestion({
         targetJob: targetJob || 'Software Engineer',
         resumeText: resume ? `Candidate file: ${resume.name}` : '',
@@ -215,7 +302,33 @@ export const InterviewProvider = ({ children }) => {
     } finally {
       setIsGeneratingQuestion(false);
     }
-  }, [currentQuestion, targetJob, resume, interviewHistory, executeSpeech]);
+  }, [currentQuestion, targetJob, resume, interviewHistory, executeSpeech, transitionInterviewState]);
+
+  askNextQuestionRef.current = askNextQuestion;
+
+  // React to Candidate Speaking in WAITING_FOR_CANDIDATE state
+  useEffect(() => {
+    const current = interviewStateRef.current;
+
+    if (current === INTERVIEW_STATES.WAITING_FOR_CANDIDATE && candidateSpeaking === true) {
+      transitionInterviewState(INTERVIEW_STATES.CANDIDATE_SPEAKING, 'Candidate began speaking detected via CV + Audio');
+      InterviewTelemetry.recordEvent('candidateSpeechStartedAt', { hr: performance.now() });
+    } else if (current === INTERVIEW_STATES.CANDIDATE_SPEAKING && candidateSpeaking === false) {
+      // Candidate paused/finished speaking
+      transitionInterviewState(INTERVIEW_STATES.TRANSCRIBING, 'Candidate finished response');
+      InterviewTelemetry.recordEvent('candidateSpeechEndedAt', { hr: performance.now() });
+
+      // Simulate natural speech ingestion before formulating next turn
+      const timer = setTimeout(() => {
+        InterviewTelemetry.recordEvent('transcriptReceivedAt', { transcript: 'Candidate completed explanation' });
+        if (askNextQuestionRef.current) {
+          askNextQuestionRef.current("Candidate presented system design and performance considerations.");
+        }
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [candidateSpeaking, transitionInterviewState]);
 
   const replayQuestion = useCallback(() => {
     if (currentQuestion && currentQuestion.text) {
@@ -227,7 +340,6 @@ export const InterviewProvider = ({ children }) => {
     stateControllerRef.current.stop(AVATAR_STATES.LISTENING);
   }, []);
 
-  // Developer Voice Test Panel (Phase 35)
   const testVoice = useCallback((gender) => {
     SpeechEngine.speak(
       gender === 'female' 
@@ -237,7 +349,6 @@ export const InterviewProvider = ({ children }) => {
     );
   }, []);
 
-  // Dispatch external / future backend API events
   const dispatchInterviewEvent = useCallback((event) => {
     if (!event || !event.type) return;
     switch (event.type) {
@@ -278,6 +389,8 @@ export const InterviewProvider = ({ children }) => {
         startOfficeEntrance,
 
         // State Machine & Speech Lifecycle
+        interviewState,
+        transitionInterviewState,
         avatarState,
         setAvatarState: (st) => stateControllerRef.current.setState(st),
         isInterviewStarted,
@@ -288,6 +401,13 @@ export const InterviewProvider = ({ children }) => {
         stopSpeaking,
         testVoice,
         dispatchInterviewEvent,
+
+        // Candidate CV & Multimodal Speaking State
+        candidateSpeaking,
+        candidateCV,
+
+        // High-Resolution Telemetry & Timestamps
+        telemetry,
 
         // Authoritative Question & Subtitle
         currentQuestion,

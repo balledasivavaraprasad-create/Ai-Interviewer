@@ -80,19 +80,8 @@ const avatarFragmentShader = `
   uniform float uTime;
   uniform float uBlink;
   uniform float uEyebrowRaise;
-  uniform float uJawOpen;
-  uniform float uLipWidth;
-  uniform float uLipPucker;
-  uniform float uUpperLipRaise;
-  uniform float uLowerLipDepress;
-  uniform float uLipClose;
-  uniform float uMouthCornerPull;
-  uniform float uChinRaise;
-  uniform vec2 uMouthCenter;
-  uniform float uMouthWidth;
   uniform vec2 uEyeCenter;
   uniform float uEyebrowY;
-  uniform float uChinY;
   uniform vec3 uKeyLightColor;
   uniform vec3 uFillLightColor;
   uniform float uFadeIn;
@@ -107,40 +96,7 @@ const avatarFragmentShader = `
     vec2 uv = vUv;
 
     // -------------------------------------------------------------------------
-    // 1. Viseme Mouth Morphing using CV Landmarked Coordinates
-    // -------------------------------------------------------------------------
-    vec2 mouthCenter = uMouthCenter;
-    float distToMouthX = abs(uv.x - mouthCenter.x);
-    float distToMouthY = abs(uv.y - mouthCenter.y);
-
-    if (distToMouthX < (uMouthWidth * 1.35) && uv.y > (uChinY - 0.01) && uv.y < (mouthCenter.y + 0.07)) {
-      float mouthHorizMask = smoothstep(uMouthWidth * 1.15, 0.0, distToMouthX);
-
-      // Jaw and Lower Lip Depress
-      if (uv.y <= mouthCenter.y) {
-        float lowerJawInfluence = smoothstep(uChinY, mouthCenter.y, uv.y) * mouthHorizMask;
-        uv.y += (uJawOpen * 0.024 + uLowerLipDepress * 0.016) * lowerJawInfluence;
-      }
-
-      // Upper Lip Raise
-      if (uv.y > mouthCenter.y && uv.y < (mouthCenter.y + 0.065)) {
-        float upperLipInfluence = smoothstep(mouthCenter.y + 0.065, mouthCenter.y, uv.y) * mouthHorizMask;
-        uv.y -= uUpperLipRaise * 0.012 * upperLipInfluence;
-      }
-
-      // Lip Width
-      float cornerInfluence = smoothstep(uMouthWidth * 0.15, uMouthWidth * 0.75, distToMouthX) * smoothstep(0.05, 0.0, distToMouthY);
-      uv.x += (uv.x - mouthCenter.x) * uLipWidth * cornerInfluence * 0.32;
-
-      // Lip Pucker
-      float puckerRadius = length(uv - mouthCenter);
-      float puckerInfluence = smoothstep(uMouthWidth * 0.85, 0.0, puckerRadius);
-      uv.x -= (uv.x - mouthCenter.x) * uLipPucker * puckerInfluence * 0.26;
-      uv.y -= (uv.y - mouthCenter.y) * uLipPucker * puckerInfluence * 0.15;
-    }
-
-    // -------------------------------------------------------------------------
-    // 2. Eyebrow Micro-Expressions anchored to CV Eyebrows
+    // 1. Eyebrow Micro-Expressions anchored to CV Eyebrows
     // -------------------------------------------------------------------------
     if (abs(uv.y - uEyebrowY) < 0.045 && abs(uv.x - 0.502) < 0.15) {
       float browInfluence = smoothstep(0.045, 0.0, abs(uv.y - uEyebrowY)) * smoothstep(0.15, 0.0, abs(uv.x - 0.502));
@@ -148,7 +104,7 @@ const avatarFragmentShader = `
     }
 
     // -------------------------------------------------------------------------
-    // 3. Eyelid Micro-Blinks anchored to CV Eyes
+    // 2. Eyelid Micro-Blinks anchored to CV Eyes
     // -------------------------------------------------------------------------
     if (uBlink > 0.005) {
       float distY = abs(uv.y - uEyeCenter.y);
@@ -163,16 +119,7 @@ const avatarFragmentShader = `
     vec4 texColor = texture2D(uTexture, uv);
 
     // -------------------------------------------------------------------------
-    // 4. Subtle Oral Cavity Depth Shadowing
-    // -------------------------------------------------------------------------
-    if (uJawOpen > 0.12 && distToMouthX < (uMouthWidth * 0.6) && distToMouthY < 0.022) {
-      float mouthInterior = smoothstep(uMouthWidth * 0.6, 0.0, distToMouthX) * smoothstep(0.022, 0.0, distToMouthY);
-      float shadowFactor = 1.0 - (mouthInterior * uJawOpen * 0.35);
-      texColor.rgb *= shadowFactor;
-    }
-
-    // -------------------------------------------------------------------------
-    // 5. Normal & Room Lighting Interaction
+    // 3. Normal & Room Practical Lighting Interaction
     // -------------------------------------------------------------------------
     vec2 texelSize = vec2(1.0 / 1024.0, 1.0 / 571.0);
     float depthLeft = texture2D(uDepthMap, uv - vec2(texelSize.x * 2.0, 0.0)).r;
@@ -255,19 +202,8 @@ export const InterviewerAvatar = ({ mousePos }) => {
       uHeadTilt: { value: 0.0 },
       uBlink: { value: 0.0 },
       uEyebrowRaise: { value: 0.0 },
-      uJawOpen: { value: 0.0 },
-      uLipWidth: { value: 0.0 },
-      uLipPucker: { value: 0.0 },
-      uUpperLipRaise: { value: 0.0 },
-      uLowerLipDepress: { value: 0.0 },
-      uLipClose: { value: 0.0 },
-      uMouthCornerPull: { value: 0.0 },
-      uChinRaise: { value: 0.0 },
-      uMouthCenter: { value: new THREE.Vector2(faceRig.mouth.center.x, faceRig.mouth.center.y) },
-      uMouthWidth: { value: faceRig.mouth.width },
       uEyeCenter: { value: new THREE.Vector2(0.502, (faceRig.eyes.left.y + faceRig.eyes.right.y) * 0.5) },
       uEyebrowY: { value: (faceRig.eyebrows.left.y + faceRig.eyebrows.right.y) * 0.5 },
-      uChinY: { value: faceRig.jaw.chin.y },
       uFadeIn: { value: 0.0 },
       uKeyLightColor: { value: new THREE.Color('#dce6f2') },
       uFillLightColor: { value: new THREE.Color('#f0dfc8') },
@@ -286,16 +222,8 @@ export const InterviewerAvatar = ({ mousePos }) => {
     const speechEnergy = AudioAnalyzer.getEnergy();
     const isSpeaking = avatarState === 'SPEAKING';
 
-    // 1. Update Lip-Sync controller (Viseme weights)
-    const mouthWeights = lipSyncController.update(delta);
-    u.uJawOpen.value = mouthWeights.jawOpen;
-    u.uLipWidth.value = mouthWeights.lipWidth;
-    u.uLipPucker.value = mouthWeights.lipPucker;
-    u.uUpperLipRaise.value = mouthWeights.upperLipRaise;
-    u.uLowerLipDepress.value = mouthWeights.lowerLipDepress;
-    u.uLipClose.value = mouthWeights.lipClose;
-    u.uMouthCornerPull.value = mouthWeights.mouthCornerPull;
-    u.uChinRaise.value = mouthWeights.chinRaise;
+    // 1. Audio-driven Lip-Sync controller (Ready for audio-clock driven segments)
+    lipSyncController.update(delta);
 
     // 2. Update Facial controller (Blink, Eyebrows, Cheeks, Gaze)
     const facial = facialController.update(delta, time, avatarState, isSpeaking, speechEnergy);
